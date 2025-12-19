@@ -24,8 +24,15 @@
  ********************************************************************/
 document.addEventListener('DOMContentLoaded', function() {
 
-  var coco = cocoSsd.load({base: 'mobilenet_v2'});
-  console.log(coco);
+  // Load the yolov8n airplane detector model
+  var yolo = tf.loadGraphModel(
+    "https://cdn.jsdelivr.net/gh/arngolo/tfjs-models/yolov8n-airplanes/model.json"
+  );
+  console.log("Model loaded!", yolo);
+
+  function sigmoid(x) {
+    return 1 / (1 + Math.exp(-x));
+  }
 
   // Create the map
   var map = L.map('map').setView([0, 0], 1);
@@ -48,9 +55,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // upon merge.
     // Note: You must access the maptiles using a map url and iteractively classify the maptiles. Maybe merge the maptiles before classification !!? :
     ********************************************************************/
-    console.log(coco);
+    // console.log(yolo);
 
-    if (coco) {
+    if (yolo) {
       console.log('model loaded successfully!');
 
       console.log('zoom level: ', map.getZoom());
@@ -106,19 +113,31 @@ document.addEventListener('DOMContentLoaded', function() {
       console.log('canvas width is: ', canvas.width);
       console.log('canvas height is: ', canvas.height);
 
-        //MODEL.DETECT takes 1) the image, video or canvas element, 2) maxNumBoxes and 3) minScore as arguments
-        var image = document.getElementById('image');
-        console.log("IMAGE: ", image);
-        console.log("IMAGE WIDTH: ", image.width);
-        console.log("IMAGE HEIGHT: ", image.height);
+      //MODEL.PREDICT takes has the format:[1, 1024, 1024, 3]
+      var image = document.getElementById('image');
+      console.log("IMAGE: ", image);
+      console.log("IMAGE WIDTH: ", image.width);
+      console.log("IMAGE HEIGHT: ", image.height);
 
-      coco.then(model => {model.detect(image, 10, 0.3).
-        then(function (predictions) {
 
+      // Preprocess image
+      var input = tf.browser.fromPixels(image)
+        .resizeBilinear([1024, 1024])   // must match model
+        .div(255.0)
+        .expandDims(0);               // [1, 1024, 1024, 3] 
+
+      yolo.then(model => {
+        console.log("YOLO model loaded");
+        
+
+        var predictions = model.predict(input); // Tensor [1, 5, 21504]
+        var data = predictions.dataSync(); // 1D array
+
+        var [, numAttrs, numBoxes] = predictions.shape;
+        console.log(numAttrs, numBoxes )
           // Lets write the predictions to a new paragraph element and
           // add it to the DOM.
-          console.log(predictions);
-          for (let n = 0; n < predictions.length; n++) {
+          // for (let n = 0; n < numAttrs; n++) {
 
             // get the map bounds, lat difference and lng difference
             var min_height_width = map.layerPointToLatLng([0, 0]);
@@ -140,10 +159,33 @@ document.addEventListener('DOMContentLoaded', function() {
             // box_start = [x, y]; // box_end = [x + width, y + height]
             // Leaflet rectangle uses a list of SW and NE location tuples. tensorflow.js models predict the top left coordinates, width and height
             // we need to convert top left coordinates (NW) into bottom left coordinates (SW)
-            var left = predictions[n].bbox[0];
-            var right = left + predictions[n].bbox[2];
-            var top = predictions[n].bbox[1];
-            var bottom = top + predictions[n].bbox[3];
+
+            //data is an array of size numAttrs * numBoxes. numAttrs = 5 (x, y, width, height, score), so, we will be using a stride of 5.
+            const stride = 5;
+
+            const CONF_THRESH = 0.68;
+            // const detections = [];
+
+          for (let i = 0; i < numBoxes; i++) {
+            const conf = sigmoid(data[i + 4*numBoxes]);
+            if (conf < CONF_THRESH) continue;
+            const xc = data[i];
+            const yc = data[i + numBoxes];
+            const w  = data[i + 2*numBoxes];
+            const h  = data[i + 3*numBoxes];
+
+
+            // From [x_coord, y_coord, width, height] format to top left / right bottom [top, left, right, bottom]
+            var left   = xc - w / 2;
+            var right  = xc + w / 2;
+            var top    = yc - h / 2;
+            var bottom = yc + h / 2;
+
+
+          //   // detections.push({ xc, yc, w, h, conf });
+          //   detections.push({ left, right, top, bottom, conf });
+          // }
+
             console.log("left: ", left, "px");
             console.log("right: ", right, "px");
             console.log("top: ", top, "px");
@@ -172,18 +214,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // // add text to map
             L.tooltip({permanent: true, direction: 'auto'})
-              .setContent(`${predictions[n].class}: ${predictions[n].score.toFixed(2)}%`)
+              .setContent(`airplane: ${conf.toFixed(2)}%`)
               .setLatLng(rect_ne).addTo(layerGroup);
-
-            console.log('RECTANGLE: ', rectangle);
-            // console.log('TEST: ', box_start, box_end);
-
-
-            console.log(predictions[n]).class;
           };
 
         });
-      });
+      // });
     }
   });
 });
