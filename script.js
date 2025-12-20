@@ -121,12 +121,12 @@ document.addEventListener('DOMContentLoaded', function() {
       canvas.position = "relative"; // relative to its div parent "content"
 
       var map_url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-      var lon = map.getCenter().lng;
-      var lat = map.getCenter().lat;
+      var center_lng = map.getCenter().lng;
+      var center_lat = map.getCenter().lat;
       var zoom = map.getZoom();
       var staticMap = StaticMap(map_url);
 
-      staticMap.getMap(canvas, lon, lat, zoom, function() {
+      staticMap.getMap(canvas, center_lng, center_lat, zoom, function() {
         canvas.toBlob(function(blob) {
           console.log("canvas_image: ", blob)
           const newImg = document.getElementById('image');
@@ -141,13 +141,13 @@ document.addEventListener('DOMContentLoaded', function() {
       });
 
       });
-      console.log('staticMap: ', staticMap);
+      // console.log('staticMap: ', staticMap);
       console.log('canvas width is: ', canvas.width);
       console.log('canvas height is: ', canvas.height);
 
-      //MODEL.PREDICT takes has the format:[1, 1024, 1024, 3]
+      //MODEL.PREDICT has the format:[1, 1024, 1024, 3]
       var image = document.getElementById('image');
-      console.log("IMAGE: ", image);
+      // console.log("IMAGE: ", image);
       console.log("IMAGE WIDTH: ", image.width);
       console.log("IMAGE HEIGHT: ", image.height);
 
@@ -171,21 +171,13 @@ document.addEventListener('DOMContentLoaded', function() {
         // add it to the DOM.
         // for (let n = 0; n < numAttrs; n++) {
 
-        // get the map bounds, lat difference and lng difference
-        var min_height_width = map.layerPointToLatLng([0, 0]);
-        var max_height_width = map.layerPointToLatLng([map.getSize().x, map.getSize().y]);
-        console.log("MIN HEIGHT WIDTH: ", min_height_width.lat, min_height_width.lng);
-        console.log("MAX HEIGHT WIDTH: ", max_height_width.lat, max_height_width.lng);
-        var lat_dif = max_height_width.lat - min_height_width.lat;
-        var lng_dif = max_height_width.lng - min_height_width.lng;
-        console.log("lat diff: ", lat_dif);
-        console.log("lng diff: ", lng_dif);
+        // get the DINAMIC map bounds, lat difference and lng difference
+        var bounds = map.getBounds(); 
+        var northWest = bounds.getNorthWest();
+        var southEast = bounds.getSouthEast();
 
-        // get the map center latlng which will allow us to get dynamic bounds
-        console.log("Center lat long: ", map.getCenter().lat, map.getCenter().lng);
-        console.log('FRAME: ', map.getCenter().lat - (lat_dif/2), map.getCenter().lng - (lng_dif/2), "//", map.getCenter().lat + (lat_dif/2), map.getCenter().lng + (lng_dif/2));
-        var dynamic_min_lat = map.getCenter().lat - (lat_dif/2);
-        var dynamic_min_lng = map.getCenter().lng - (lng_dif/2);
+        var lat_dif = southEast.lat - northWest.lat;
+        var lng_dif = southEast.lng - northWest.lng;
 
         // Leaflet rectangle uses a list of SW and NE location tuples. tensorflow.js models predict the top left coordinates, width and height
         // we need to convert top left coordinates (NW) into bottom left coordinates (SW)
@@ -236,10 +228,10 @@ document.addEventListener('DOMContentLoaded', function() {
           console.log("confidence: ", conf);
 
           // from pixel coordinate to lat long
-          var box_west = dynamic_min_lng + pixelDim_to_latlngDim(left, map.getSize().x, lng_dif);
-          var box_east = dynamic_min_lng + pixelDim_to_latlngDim(right, map.getSize().x, lng_dif);
-          var box_north = dynamic_min_lat + pixelDim_to_latlngDim(top, map.getSize().y, lat_dif);
-          var box_south = dynamic_min_lat + pixelDim_to_latlngDim(bottom, map.getSize().y, lat_dif);
+          var box_west = northWest.lng + pixelDim_to_latlngDim(left, map.getSize().x, lng_dif);
+          var box_east = northWest.lng + pixelDim_to_latlngDim(right, map.getSize().x, lng_dif);
+          var box_north = northWest.lat + pixelDim_to_latlngDim(top, map.getSize().y, lat_dif);
+          var box_south = northWest.lat + pixelDim_to_latlngDim(bottom, map.getSize().y, lat_dif);
           console.log("box west: ", box_west);
           console.log("box east: ", box_east);
           console.log("box north: ", box_north);
