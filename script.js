@@ -184,7 +184,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         //data is an array of size numAttrs * numBoxes. numAttrs = 5 (x, y, width, height, score), so, we will be using a stride of 5.
 
-        const CONF_THRESH = 0.68;
+        const CONF_THRESH = 0.55;
         const detections = [];
 
         // DECODING DETECTIONS
