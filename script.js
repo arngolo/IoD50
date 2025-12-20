@@ -34,6 +34,38 @@ document.addEventListener('DOMContentLoaded', function() {
     return 1 / (1 + Math.exp(-x));
   }
 
+  function iou(a, b) {
+    const interLeft   = Math.max(a.left, b.left);
+    const interTop    = Math.max(a.top, b.top);
+    const interRight  = Math.min(a.right, b.right);
+    const interBottom = Math.min(a.bottom, b.bottom);
+
+    const interW = Math.max(0, interRight - interLeft);
+    const interH = Math.max(0, interBottom - interTop);
+    const interArea = interW * interH;
+
+    const areaA = (a.right - a.left) * (a.bottom - a.top);
+    const areaB = (b.right - b.left) * (b.bottom - b.top);
+
+    return interArea / (areaA + areaB - interArea);
+  }
+
+  function nonMaxSuppression(boxes, iouThresh = 0.5, maxDet = 100) {
+    // sort by confidence
+    boxes.sort((a, b) => b.conf - a.conf);
+
+    const selected = [];
+
+    while (boxes.length && selected.length < maxDet) {
+      const best = boxes.shift();
+      selected.push(best);
+
+      boxes = boxes.filter(box => iou(best, box) < iouThresh);
+    }
+
+    return selected;
+  }
+
   // Create the map
   var map = L.map('map').setView([0, 0], 1);
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
@@ -135,91 +167,102 @@ document.addEventListener('DOMContentLoaded', function() {
 
         var [, numAttrs, numBoxes] = predictions.shape;
         console.log(numAttrs, numBoxes )
-          // Lets write the predictions to a new paragraph element and
-          // add it to the DOM.
-          // for (let n = 0; n < numAttrs; n++) {
+        // Lets write the predictions to a new paragraph element and
+        // add it to the DOM.
+        // for (let n = 0; n < numAttrs; n++) {
 
-            // get the map bounds, lat difference and lng difference
-            var min_height_width = map.layerPointToLatLng([0, 0]);
-            var max_height_width = map.layerPointToLatLng([map.getSize().x, map.getSize().y]);
-            console.log("MIN HEIGHT WIDTH: ", min_height_width.lat, min_height_width.lng);
-            console.log("MAX HEIGHT WIDTH: ", max_height_width.lat, max_height_width.lng);
-            var lat_dif = max_height_width.lat - min_height_width.lat;
-            var lng_dif = max_height_width.lng - min_height_width.lng;
-            console.log("lat diff: ", lat_dif);
-            console.log("lng diff: ", lng_dif);
+        // get the map bounds, lat difference and lng difference
+        var min_height_width = map.layerPointToLatLng([0, 0]);
+        var max_height_width = map.layerPointToLatLng([map.getSize().x, map.getSize().y]);
+        console.log("MIN HEIGHT WIDTH: ", min_height_width.lat, min_height_width.lng);
+        console.log("MAX HEIGHT WIDTH: ", max_height_width.lat, max_height_width.lng);
+        var lat_dif = max_height_width.lat - min_height_width.lat;
+        var lng_dif = max_height_width.lng - min_height_width.lng;
+        console.log("lat diff: ", lat_dif);
+        console.log("lng diff: ", lng_dif);
 
-            // get the map center latlng which will allow us to get dynamic bounds
-            console.log("Center lat long: ", map.getCenter().lat, map.getCenter().lng);
-            console.log('FRAME: ', map.getCenter().lat - (lat_dif/2), map.getCenter().lng - (lng_dif/2), "//", map.getCenter().lat + (lat_dif/2), map.getCenter().lng + (lng_dif/2));
-            var dynamic_min_lat = map.getCenter().lat - (lat_dif/2);
-            var dynamic_min_lng = map.getCenter().lng - (lng_dif/2);
+        // get the map center latlng which will allow us to get dynamic bounds
+        console.log("Center lat long: ", map.getCenter().lat, map.getCenter().lng);
+        console.log('FRAME: ', map.getCenter().lat - (lat_dif/2), map.getCenter().lng - (lng_dif/2), "//", map.getCenter().lat + (lat_dif/2), map.getCenter().lng + (lng_dif/2));
+        var dynamic_min_lat = map.getCenter().lat - (lat_dif/2);
+        var dynamic_min_lng = map.getCenter().lng - (lng_dif/2);
 
-            // predictions = [x, y, width, height]
-            // box_start = [x, y]; // box_end = [x + width, y + height]
-            // Leaflet rectangle uses a list of SW and NE location tuples. tensorflow.js models predict the top left coordinates, width and height
-            // we need to convert top left coordinates (NW) into bottom left coordinates (SW)
+        // Leaflet rectangle uses a list of SW and NE location tuples. tensorflow.js models predict the top left coordinates, width and height
+        // we need to convert top left coordinates (NW) into bottom left coordinates (SW)
 
-            //data is an array of size numAttrs * numBoxes. numAttrs = 5 (x, y, width, height, score), so, we will be using a stride of 5.
-            const stride = 5;
+        //data is an array of size numAttrs * numBoxes. numAttrs = 5 (x, y, width, height, score), so, we will be using a stride of 5.
 
-            const CONF_THRESH = 0.68;
-            // const detections = [];
+        const CONF_THRESH = 0.68;
+        const detections = [];
 
-          for (let i = 0; i < numBoxes; i++) {
-            const conf = sigmoid(data[i + 4*numBoxes]);
-            if (conf < CONF_THRESH) continue;
-            const xc = data[i];
-            const yc = data[i + numBoxes];
-            const w  = data[i + 2*numBoxes];
-            const h  = data[i + 3*numBoxes];
+        // DECODING DETECTIONS
+        for (let i = 0; i < numBoxes; i++) {
+          var conf = sigmoid(data[i + 4*numBoxes]);
+          if (conf < CONF_THRESH) continue;
+          const xc = data[i];
+          const yc = data[i + numBoxes];
+          const w  = data[i + 2*numBoxes];
+          const h  = data[i + 3*numBoxes];
 
 
-            // From [x_coord, y_coord, width, height] format to top left / right bottom [top, left, right, bottom]
-            var left   = xc - w / 2;
-            var right  = xc + w / 2;
-            var top    = yc - h / 2;
-            var bottom = yc + h / 2;
+          // From [x_coord, y_coord, width, height] format to top left / right bottom [top, left, right, bottom]
+          var left   = xc - w / 2;
+          var right  = xc + w / 2;
+          var top    = yc - h / 2;
+          var bottom = yc + h / 2;
 
+          // detections.push({ xc, yc, w, h, conf });
+          detections.push({ left, right, top, bottom, conf });
+        }
 
-          //   // detections.push({ xc, yc, w, h, conf });
-          //   detections.push({ left, right, top, bottom, conf });
-          // }
+        // NMS over all detected boxes
+        const finalBoxes = nonMaxSuppression(detections, 0.5); // array of plain JavaScript objects
 
-            console.log("left: ", left, "px");
-            console.log("right: ", right, "px");
-            console.log("top: ", top, "px");
-            console.log("bottom: ", bottom, "px");
+        // DRAWING FILTERED BOXES AFTER NMS
+        for (let i = 0; i < finalBoxes.length; i++) {
 
-            // from pixel coordinate to lat long
-            var box_west = dynamic_min_lng + pixelDim_to_latlngDim(left, map.getSize().x, lng_dif);
-            var box_east = dynamic_min_lng + pixelDim_to_latlngDim(right, map.getSize().x, lng_dif);
-            var box_north = dynamic_min_lat + pixelDim_to_latlngDim(top, map.getSize().y, lat_dif);
-            var box_south = dynamic_min_lat + pixelDim_to_latlngDim(bottom, map.getSize().y, lat_dif);
-            console.log("box west: ", box_west);
-            console.log("box east: ", box_east);
-            console.log("box north: ", box_north);
-            console.log("box south: ", box_south);
+          var box = finalBoxes[i];
 
-            // [lat, lng]
-            var rect_sw = [box_south, box_west];
-            var rect_ne = [box_north, box_east];
-            var latlngs = [rect_sw, rect_ne];
-            console.log('BOX START: ', rect_sw);
-            console.log('BOX END: ', rect_ne);
+          var left   = box.left;
+          var right  = box.right;
+          var top    = box.top;
+          var bottom = box.bottom;
+          var conf   = box.conf;
 
-            var rectOptions = {color: 'Red', weight: 1}
-            var rectangle = L.rectangle(latlngs, rectOptions);
-            rectangle.addTo(layerGroup);
+          console.log("left: ", left, "px");
+          console.log("right: ", right, "px");
+          console.log("top: ", top, "px");
+          console.log("bottom: ", bottom, "px");
+          console.log("confidence: ", conf);
 
-            // // add text to map
-            L.tooltip({permanent: true, direction: 'auto'})
-              .setContent(`airplane: ${conf.toFixed(2)}%`)
-              .setLatLng(rect_ne).addTo(layerGroup);
-          };
+          // from pixel coordinate to lat long
+          var box_west = dynamic_min_lng + pixelDim_to_latlngDim(left, map.getSize().x, lng_dif);
+          var box_east = dynamic_min_lng + pixelDim_to_latlngDim(right, map.getSize().x, lng_dif);
+          var box_north = dynamic_min_lat + pixelDim_to_latlngDim(top, map.getSize().y, lat_dif);
+          var box_south = dynamic_min_lat + pixelDim_to_latlngDim(bottom, map.getSize().y, lat_dif);
+          console.log("box west: ", box_west);
+          console.log("box east: ", box_east);
+          console.log("box north: ", box_north);
+          console.log("box south: ", box_south);
 
-        });
-      // });
+          // [lat, lng]
+          var rect_sw = [box_south, box_west];
+          var rect_ne = [box_north, box_east];
+          var latlngs = [rect_sw, rect_ne];
+          console.log('BOX START: ', rect_sw);
+          console.log('BOX END: ', rect_ne);
+
+          var rectOptions = {color: 'Red', weight: 1}
+          var rectangle = L.rectangle(latlngs, rectOptions);
+          rectangle.addTo(layerGroup);
+
+          // // add text to map
+          L.tooltip({permanent: true, direction: 'auto'})
+            .setContent(`airplane: ${conf.toFixed(2)}%`)
+            .setLatLng(rect_ne).addTo(layerGroup);
+        };
+
+      });
     }
   });
 });
