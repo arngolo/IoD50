@@ -181,8 +181,8 @@ document.addEventListener('DOMContentLoaded', function() {
           var lat_dif = southEast.lat - northWest.lat;
           var lng_dif = southEast.lng - northWest.lng;
 
-          // Leaflet rectangle uses a list of SW and NE location tuples. tensorflow.js models predict the top left coordinates, width and height
-          // we need to convert top left coordinates (NW) into bottom left coordinates (SW)
+          // Leaflet rectangle uses a list of SW and NE location tuples. Yolov8n tensorflow.js model predicts the central coordinate (x, y), width and height
+          // we need to get a list of SW and NE from the predicted format.
 
           //data is an array of size numAttrs * numBoxes. numAttrs = 5 (x, y, width, height, score), so, we will be using a stride of 5.
 
