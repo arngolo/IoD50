@@ -151,110 +151,113 @@ document.addEventListener('DOMContentLoaded', function() {
       console.log("IMAGE WIDTH: ", image.width);
       console.log("IMAGE HEIGHT: ", image.height);
 
+      image.onload = async () => {
+        console.log("Image fully loaded → running detection");
 
-      // Preprocess image
-      var input = tf.browser.fromPixels(image)
-        .resizeBilinear([1024, 1024])   // must match model
-        .div(255.0)
-        .expandDims(0);               // [1, 1024, 1024, 3] 
+        // Preprocess image
+        var input = tf.browser.fromPixels(image)
+          .resizeBilinear([1024, 1024])   // must match model
+          .div(255.0)
+          .expandDims(0);               // [1, 1024, 1024, 3] 
 
-      yolo.then(model => {
-        console.log("YOLO model loaded");
-        
+        yolo.then(model => {
+          console.log("YOLO model loaded");
+          
 
-        var predictions = model.predict(input); // Tensor [1, 5, 21504]
-        var data = predictions.dataSync(); // 1D array
+          var predictions = model.predict(input); // Tensor [1, 5, 21504]
+          var data = predictions.dataSync(); // 1D array
 
-        var [, numAttrs, numBoxes] = predictions.shape;
-        console.log(numAttrs, numBoxes )
-        // Lets write the predictions to a new paragraph element and
-        // add it to the DOM.
-        // for (let n = 0; n < numAttrs; n++) {
+          var [, numAttrs, numBoxes] = predictions.shape;
+          console.log(numAttrs, numBoxes )
+          // Lets write the predictions to a new paragraph element and
+          // add it to the DOM.
+          // for (let n = 0; n < numAttrs; n++) {
 
-        // get the DINAMIC map bounds, lat difference and lng difference
-        var bounds = map.getBounds(); 
-        var northWest = bounds.getNorthWest();
-        var southEast = bounds.getSouthEast();
+          // get the DINAMIC map bounds, lat difference and lng difference
+          var bounds = map.getBounds(); 
+          var northWest = bounds.getNorthWest();
+          var southEast = bounds.getSouthEast();
 
-        var lat_dif = southEast.lat - northWest.lat;
-        var lng_dif = southEast.lng - northWest.lng;
+          var lat_dif = southEast.lat - northWest.lat;
+          var lng_dif = southEast.lng - northWest.lng;
 
-        // Leaflet rectangle uses a list of SW and NE location tuples. tensorflow.js models predict the top left coordinates, width and height
-        // we need to convert top left coordinates (NW) into bottom left coordinates (SW)
+          // Leaflet rectangle uses a list of SW and NE location tuples. tensorflow.js models predict the top left coordinates, width and height
+          // we need to convert top left coordinates (NW) into bottom left coordinates (SW)
 
-        //data is an array of size numAttrs * numBoxes. numAttrs = 5 (x, y, width, height, score), so, we will be using a stride of 5.
+          //data is an array of size numAttrs * numBoxes. numAttrs = 5 (x, y, width, height, score), so, we will be using a stride of 5.
 
-        const CONF_THRESH = 0.55;
-        const detections = [];
+          const CONF_THRESH = 0.55;
+          const detections = [];
 
-        // DECODING DETECTIONS
-        for (let i = 0; i < numBoxes; i++) {
-          var conf = sigmoid(data[i + 4*numBoxes]);
-          if (conf < CONF_THRESH) continue;
-          const xc = data[i];
-          const yc = data[i + numBoxes];
-          const w  = data[i + 2*numBoxes];
-          const h  = data[i + 3*numBoxes];
+          // DECODING DETECTIONS
+          for (let i = 0; i < numBoxes; i++) {
+            var conf = sigmoid(data[i + 4*numBoxes]);
+            if (conf < CONF_THRESH) continue;
+            const xc = data[i];
+            const yc = data[i + numBoxes];
+            const w  = data[i + 2*numBoxes];
+            const h  = data[i + 3*numBoxes];
 
 
-          // From [x_coord, y_coord, width, height] format to top left / right bottom [top, left, right, bottom]
-          var left   = xc - w / 2;
-          var right  = xc + w / 2;
-          var top    = yc - h / 2;
-          var bottom = yc + h / 2;
+            // From [x_coord, y_coord, width, height] format to top left / right bottom [top, left, right, bottom]
+            var left   = xc - w / 2;
+            var right  = xc + w / 2;
+            var top    = yc - h / 2;
+            var bottom = yc + h / 2;
 
-          // detections.push({ xc, yc, w, h, conf });
-          detections.push({ left, right, top, bottom, conf });
-        }
+            // detections.push({ xc, yc, w, h, conf });
+            detections.push({ left, right, top, bottom, conf });
+          }
 
-        // NMS over all detected boxes
-        const finalBoxes = nonMaxSuppression(detections, 0.5); // array of plain JavaScript objects
+          // NMS over all detected boxes
+          const finalBoxes = nonMaxSuppression(detections, 0.5); // array of plain JavaScript objects
 
-        // DRAWING FILTERED BOXES AFTER NMS
-        for (let i = 0; i < finalBoxes.length; i++) {
+          // DRAWING FILTERED BOXES AFTER NMS
+          for (let i = 0; i < finalBoxes.length; i++) {
 
-          var box = finalBoxes[i];
+            var box = finalBoxes[i];
 
-          var left   = box.left;
-          var right  = box.right;
-          var top    = box.top;
-          var bottom = box.bottom;
-          var conf   = box.conf;
+            var left   = box.left;
+            var right  = box.right;
+            var top    = box.top;
+            var bottom = box.bottom;
+            var conf   = box.conf;
 
-          console.log("left: ", left, "px");
-          console.log("right: ", right, "px");
-          console.log("top: ", top, "px");
-          console.log("bottom: ", bottom, "px");
-          console.log("confidence: ", conf);
+            console.log("left: ", left, "px");
+            console.log("right: ", right, "px");
+            console.log("top: ", top, "px");
+            console.log("bottom: ", bottom, "px");
+            console.log("confidence: ", conf);
 
-          // from pixel coordinate to lat long
-          var box_west = northWest.lng + pixelDim_to_latlngDim(left, map.getSize().x, lng_dif);
-          var box_east = northWest.lng + pixelDim_to_latlngDim(right, map.getSize().x, lng_dif);
-          var box_north = northWest.lat + pixelDim_to_latlngDim(top, map.getSize().y, lat_dif);
-          var box_south = northWest.lat + pixelDim_to_latlngDim(bottom, map.getSize().y, lat_dif);
-          console.log("box west: ", box_west);
-          console.log("box east: ", box_east);
-          console.log("box north: ", box_north);
-          console.log("box south: ", box_south);
+            // from pixel coordinate to lat long
+            var box_west = northWest.lng + pixelDim_to_latlngDim(left, map.getSize().x, lng_dif);
+            var box_east = northWest.lng + pixelDim_to_latlngDim(right, map.getSize().x, lng_dif);
+            var box_north = northWest.lat + pixelDim_to_latlngDim(top, map.getSize().y, lat_dif);
+            var box_south = northWest.lat + pixelDim_to_latlngDim(bottom, map.getSize().y, lat_dif);
+            console.log("box west: ", box_west);
+            console.log("box east: ", box_east);
+            console.log("box north: ", box_north);
+            console.log("box south: ", box_south);
 
-          // [lat, lng]
-          var rect_sw = [box_south, box_west];
-          var rect_ne = [box_north, box_east];
-          var latlngs = [rect_sw, rect_ne];
-          console.log('BOX START: ', rect_sw);
-          console.log('BOX END: ', rect_ne);
+            // [lat, lng]
+            var rect_sw = [box_south, box_west];
+            var rect_ne = [box_north, box_east];
+            var latlngs = [rect_sw, rect_ne];
+            console.log('BOX START: ', rect_sw);
+            console.log('BOX END: ', rect_ne);
 
-          var rectOptions = {color: 'Red', weight: 1}
-          var rectangle = L.rectangle(latlngs, rectOptions);
-          rectangle.addTo(layerGroup);
+            var rectOptions = {color: 'Red', weight: 1}
+            var rectangle = L.rectangle(latlngs, rectOptions);
+            rectangle.addTo(layerGroup);
 
-          // // add text to map
-          L.tooltip({permanent: true, direction: 'auto'})
-            .setContent(`airplane: ${conf.toFixed(2)}%`)
-            .setLatLng(rect_ne).addTo(layerGroup);
-        };
+            // // add text to map
+            L.tooltip({permanent: true, direction: 'auto'})
+              .setContent(`airplane: ${conf.toFixed(2)}%`)
+              .setLatLng(rect_ne).addTo(layerGroup);
+          };
 
-      });
+        });
+      }
     }
   });
 });
