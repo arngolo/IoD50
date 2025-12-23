@@ -24,8 +24,47 @@
  ********************************************************************/
 document.addEventListener('DOMContentLoaded', function() {
 
-  var coco = cocoSsd.load({base: 'mobilenet_v2'});
-  console.log(coco);
+  // Load the yolov8n airplane detector model
+  var yolo = tf.loadGraphModel(
+    "https://cdn.jsdelivr.net/gh/arngolo/tfjs-models/yolov8n-airplanes/model.json"
+  );
+  console.log("Model loaded!", yolo);
+
+  function sigmoid(x) {
+    return 1 / (1 + Math.exp(-x));
+  }
+
+  function iou(a, b) {
+    const interLeft   = Math.max(a.left, b.left);
+    const interTop    = Math.max(a.top, b.top);
+    const interRight  = Math.min(a.right, b.right);
+    const interBottom = Math.min(a.bottom, b.bottom);
+
+    const interW = Math.max(0, interRight - interLeft);
+    const interH = Math.max(0, interBottom - interTop);
+    const interArea = interW * interH;
+
+    const areaA = (a.right - a.left) * (a.bottom - a.top);
+    const areaB = (b.right - b.left) * (b.bottom - b.top);
+
+    return interArea / (areaA + areaB - interArea);
+  }
+
+  function nonMaxSuppression(boxes, iouThresh = 0.5, maxDet = 100) {
+    // sort by confidence
+    boxes.sort((a, b) => b.conf - a.conf);
+
+    const selected = [];
+
+    while (boxes.length && selected.length < maxDet) {
+      const best = boxes.shift();
+      selected.push(best);
+
+      boxes = boxes.filter(box => iou(best, box) < iouThresh);
+    }
+
+    return selected;
+  }
 
   // Create the map
   var map = L.map('map').setView([0, 0], 1);
@@ -48,9 +87,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // upon merge.
     // Note: You must access the maptiles using a map url and iteractively classify the maptiles. Maybe merge the maptiles before classification !!? :
     ********************************************************************/
-    console.log(coco);
+    // console.log(yolo);
 
-    if (coco) {
+    if (yolo) {
       console.log('model loaded successfully!');
 
       console.log('zoom level: ', map.getZoom());
@@ -82,12 +121,12 @@ document.addEventListener('DOMContentLoaded', function() {
       canvas.position = "relative"; // relative to its div parent "content"
 
       var map_url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-      var lon = map.getCenter().lng;
-      var lat = map.getCenter().lat;
+      var center_lng = map.getCenter().lng;
+      var center_lat = map.getCenter().lat;
       var zoom = map.getZoom();
       var staticMap = StaticMap(map_url);
 
-      staticMap.getMap(canvas, lon, lat, zoom, function() {
+      staticMap.getMap(canvas, center_lng, center_lat, zoom, function() {
         canvas.toBlob(function(blob) {
           console.log("canvas_image: ", blob)
           const newImg = document.getElementById('image');
@@ -102,58 +141,99 @@ document.addEventListener('DOMContentLoaded', function() {
       });
 
       });
-      console.log('staticMap: ', staticMap);
+      // console.log('staticMap: ', staticMap);
       console.log('canvas width is: ', canvas.width);
       console.log('canvas height is: ', canvas.height);
 
-        //MODEL.DETECT takes 1) the image, video or canvas element, 2) maxNumBoxes and 3) minScore as arguments
-        var image = document.getElementById('image');
-        console.log("IMAGE: ", image);
-        console.log("IMAGE WIDTH: ", image.width);
-        console.log("IMAGE HEIGHT: ", image.height);
+      //MODEL.PREDICT has the format:[1, 1024, 1024, 3]
+      var image = document.getElementById('image');
+      // console.log("IMAGE: ", image);
+      console.log("IMAGE WIDTH: ", image.width);
+      console.log("IMAGE HEIGHT: ", image.height);
 
-      coco.then(model => {model.detect(image, 10, 0.3).
-        then(function (predictions) {
+      image.onload = async () => {
+        console.log("Image fully loaded → running detection");
 
+        // Preprocess image
+        var input = tf.browser.fromPixels(image)
+          .resizeBilinear([1024, 1024])   // must match model
+          .div(255.0)
+          .expandDims(0);               // [1, 1024, 1024, 3] 
+
+        yolo.then(model => {
+          console.log("YOLO model loaded");
+          
+
+          var predictions = model.predict(input); // Tensor [1, 5, 21504]
+          var data = predictions.dataSync(); // 1D array
+
+          var [, numAttrs, numBoxes] = predictions.shape;
+          console.log(numAttrs, numBoxes )
           // Lets write the predictions to a new paragraph element and
           // add it to the DOM.
-          console.log(predictions);
-          for (let n = 0; n < predictions.length; n++) {
+          // for (let n = 0; n < numAttrs; n++) {
 
-            // get the map bounds, lat difference and lng difference
-            var min_height_width = map.layerPointToLatLng([0, 0]);
-            var max_height_width = map.layerPointToLatLng([map.getSize().x, map.getSize().y]);
-            console.log("MIN HEIGHT WIDTH: ", min_height_width.lat, min_height_width.lng);
-            console.log("MAX HEIGHT WIDTH: ", max_height_width.lat, max_height_width.lng);
-            var lat_dif = max_height_width.lat - min_height_width.lat;
-            var lng_dif = max_height_width.lng - min_height_width.lng;
-            console.log("lat diff: ", lat_dif);
-            console.log("lng diff: ", lng_dif);
+          // get the DINAMIC map bounds, lat difference and lng difference
+          var bounds = map.getBounds(); 
+          var northWest = bounds.getNorthWest();
+          var southEast = bounds.getSouthEast();
 
-            // get the map center latlng which will allow us to get dynamic bounds
-            console.log("Center lat long: ", map.getCenter().lat, map.getCenter().lng);
-            console.log('FRAME: ', map.getCenter().lat - (lat_dif/2), map.getCenter().lng - (lng_dif/2), "//", map.getCenter().lat + (lat_dif/2), map.getCenter().lng + (lng_dif/2));
-            var dynamic_min_lat = map.getCenter().lat - (lat_dif/2);
-            var dynamic_min_lng = map.getCenter().lng - (lng_dif/2);
+          var lat_dif = southEast.lat - northWest.lat;
+          var lng_dif = southEast.lng - northWest.lng;
 
-            // predictions = [x, y, width, height]
-            // box_start = [x, y]; // box_end = [x + width, y + height]
-            // Leaflet rectangle uses a list of SW and NE location tuples. tensorflow.js models predict the top left coordinates, width and height
-            // we need to convert top left coordinates (NW) into bottom left coordinates (SW)
-            var left = predictions[n].bbox[0];
-            var right = left + predictions[n].bbox[2];
-            var top = predictions[n].bbox[1];
-            var bottom = top + predictions[n].bbox[3];
+          // Leaflet rectangle uses a list of SW and NE location tuples. Yolov8n tensorflow.js model predicts the central coordinate (x, y), width and height
+          // we need to get a list of SW and NE from the predicted format.
+
+          //data is an array of size numAttrs * numBoxes. numAttrs = 5 (x, y, width, height, score), so, we will be using a stride of 5.
+
+          const CONF_THRESH = 0.55;
+          const detections = [];
+
+          // DECODING DETECTIONS
+          for (let i = 0; i < numBoxes; i++) {
+            var conf = sigmoid(data[i + 4*numBoxes]);
+            if (conf < CONF_THRESH) continue;
+            const xc = data[i];
+            const yc = data[i + numBoxes];
+            const w  = data[i + 2*numBoxes];
+            const h  = data[i + 3*numBoxes];
+
+
+            // From [x_coord, y_coord, width, height] format to top left / right bottom [top, left, right, bottom]
+            var left   = xc - w / 2;
+            var right  = xc + w / 2;
+            var top    = yc - h / 2;
+            var bottom = yc + h / 2;
+
+            // detections.push({ xc, yc, w, h, conf });
+            detections.push({ left, right, top, bottom, conf });
+          }
+
+          // NMS over all detected boxes
+          const finalBoxes = nonMaxSuppression(detections, 0.5); // array of plain JavaScript objects
+
+          // DRAWING FILTERED BOXES AFTER NMS
+          for (let i = 0; i < finalBoxes.length; i++) {
+
+            var box = finalBoxes[i];
+
+            var left   = box.left;
+            var right  = box.right;
+            var top    = box.top;
+            var bottom = box.bottom;
+            var conf   = box.conf;
+
             console.log("left: ", left, "px");
             console.log("right: ", right, "px");
             console.log("top: ", top, "px");
             console.log("bottom: ", bottom, "px");
+            console.log("confidence: ", conf);
 
             // from pixel coordinate to lat long
-            var box_west = dynamic_min_lng + pixelDim_to_latlngDim(left, map.getSize().x, lng_dif);
-            var box_east = dynamic_min_lng + pixelDim_to_latlngDim(right, map.getSize().x, lng_dif);
-            var box_north = dynamic_min_lat + pixelDim_to_latlngDim(top, map.getSize().y, lat_dif);
-            var box_south = dynamic_min_lat + pixelDim_to_latlngDim(bottom, map.getSize().y, lat_dif);
+            var box_west = northWest.lng + pixelDim_to_latlngDim(left, map.getSize().x, lng_dif);
+            var box_east = northWest.lng + pixelDim_to_latlngDim(right, map.getSize().x, lng_dif);
+            var box_north = northWest.lat + pixelDim_to_latlngDim(top, map.getSize().y, lat_dif);
+            var box_south = northWest.lat + pixelDim_to_latlngDim(bottom, map.getSize().y, lat_dif);
             console.log("box west: ", box_west);
             console.log("box east: ", box_east);
             console.log("box north: ", box_north);
@@ -172,18 +252,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // // add text to map
             L.tooltip({permanent: true, direction: 'auto'})
-              .setContent(`${predictions[n].class}: ${predictions[n].score.toFixed(2)}%`)
+              .setContent(`airplane: ${conf.toFixed(2)}%`)
               .setLatLng(rect_ne).addTo(layerGroup);
-
-            console.log('RECTANGLE: ', rectangle);
-            // console.log('TEST: ', box_start, box_end);
-
-
-            console.log(predictions[n]).class;
           };
 
         });
-      });
+      }
     }
   });
 });

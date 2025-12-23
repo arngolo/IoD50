@@ -21,8 +21,8 @@ html,body {
 }
 
 #map, #text {
-  height: 320px;
-  width:320px;
+  height: 1024px;
+  width:1024px;
   margin-top: 15%;
   margin-left: auto;
   margin-right: auto;
