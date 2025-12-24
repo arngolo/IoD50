@@ -184,7 +184,7 @@ document.addEventListener('DOMContentLoaded', function() {
           // Leaflet rectangle uses a list of SW and NE location tuples. Yolov8n tensorflow.js model predicts the central coordinate (x, y), width and height
           // we need to get a list of SW and NE from the predicted format.
 
-          //data is an array of size numAttrs * numBoxes. numAttrs = 5 (x, y, width, height, score), so, we will be using a stride of 5.
+          //data is an array of size numAttrs * numBoxes. numAttrs = 5 (x, y, width, height, score).
 
           const CONF_THRESH = 0.55;
           const detections = [];
@@ -199,7 +199,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const h  = data[i + 3*numBoxes];
 
 
-            // From [x_coord, y_coord, width, height] format to top left / right bottom [top, left, right, bottom]
+            // From [x_coord, y_coord, width, height] format to [top, left, right, bottom]
             var left   = xc - w / 2;
             var right  = xc + w / 2;
             var top    = yc - h / 2;
