@@ -3,7 +3,7 @@
 #### Description:
 This web application allows object detection (airplanes) on satellite images. It uses [yolov8n](https://github.com/arngolo/tfjs-models/tree/main/yolov8n-airplanes) tensorflow.js object detection model trained on Airplanes Detection Dataset from the Kaggler [mrcsgh](https://www.kaggle.com/datasets/mgarch/airplane-detection-dataset).
 
-The map was created using [Leaflet.js](https://leafletjs.com/), an open-source JavaScript library for mobile-friendly interactive maps. The leaflet map is composed of several tiles that are updated at different zoom levels. To be able to use the map as a single input image for the model: `1)` a canvas is generated from the `img` tags derived from the leaflet map using [static-map](https://github.com/rkaravia/static-map) library; `2)` converted into an image (mosaic) saved in the server blob (`canvas.toBlob`) that is later used as input for the model to make predictions:
+The map was created using [Leaflet.js](https://leafletjs.com/), an open-source JavaScript library for mobile-friendly interactive maps. The leaflet map is composed of several tiles that are updated at different zoom levels. To be able to use the map as a single input image for the model: `1)` a canvas is generated from the `img` tags derived from the leaflet map using [static-map](https://github.com/rkaravia/static-map) library; `2)` converted into an image (mosaic) saved in the server blob (`canvas.toBlob`) and later re-used as input for the model to make predictions:
 
 Install static map as:  
 ```
