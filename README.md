@@ -1,4 +1,5 @@
 # IoD50 - Imagery Object Detection
+#### App Demo: https://arngolo.github.io/IoD50
 #### Video Demo:  <https://youtu.be/_EtAuQGjsKI> `OUTDATED`
 #### Description:
 This web application allows object detection (airplanes) on satellite images. It uses [yolov8n](https://github.com/arngolo/tfjs-models/tree/main/yolov8n-airplanes) tensorflow.js object detection model trained on Airplanes Detection Dataset from the Kaggler [mrcsgh](https://www.kaggle.com/datasets/mgarch/airplane-detection-dataset).
